@@ -7,6 +7,8 @@ dependencies {
     implementation(project(":networking"))
     implementation(project(":metrics"))
     implementation(project(":storage"))
+    implementation(project(":agent"))
+    implementation(project(":monitoring"))
     
     // Core dependencies
     implementation("org.slf4j:slf4j-api:2.0.9")
@@ -29,6 +31,37 @@ tasks.test {
         events("passed", "skipped", "failed")
         showStandardStreams = true
     }
+    
+    // Set longer timeout for integration tests
+    timeout.set(java.time.Duration.ofMinutes(10))
+    
+    // Configure system properties for integration tests
+    systemProperty("project.root", project.rootDir.absolutePath)
+}
+
+// Configure separate task for integration tests
+tasks.register<Test>("integrationTest") {
+    description = "Runs integration tests"
+    group = "verification"
+    
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+        showStandardStreams = true
+    }
+    
+    timeout.set(java.time.Duration.ofMinutes(15))
+    
+    include("**/*BuildTest*")
+    include("**/*IntegrationTest*")
+    
+    systemProperty("project.root", project.rootDir.absolutePath)
+    systemProperty("integration.test", "true")
+}
+
+// Make check task depend on integration tests
+tasks.check {
+    dependsOn("integrationTest")
 }
 
 java {
