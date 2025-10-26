@@ -1,0 +1,19 @@
+plugins {
+    id 'com.github.ben-manes.versions' version '0.50.0'
+}
+
+dependencyUpdates {
+    checkForGradleUpdate = true
+    outputDir = "build/dependencyUpdates"
+    reportfileName = "report"
+    
+    rejectVersionIf {
+        isNonStable(candidate.version) && !isNonStable(currentVersion)
+    }
+}
+
+def isNonStable(String version) {
+    def stableKeyword = ['RELEASE', 'FINAL', 'GA'].any { it -> version.toUpperCase().contains(it) }
+    def regex = /^[0-9,.v-]+(-r)?$/
+    return !stableKeyword && !(version ==~ regex)
+}
