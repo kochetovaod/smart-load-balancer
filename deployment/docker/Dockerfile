@@ -10,3 +10,4 @@ USER 1000
 EXPOSE 8080 8081
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
+
