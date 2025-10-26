@@ -1,0 +1,12 @@
+dependencies {
+    implementation project(':networking')
+    implementation project(':metrics')
+
+    implementation 'io.micronaut:micronaut-inject'
+    implementation 'io.micronaut:micronaut-validation'
+
+    compileOnly 'io.micronaut:micronaut-http'
+
+    annotationProcessor 'io.micronaut:micronaut-inject-java'
+    annotationProcessor 'io.micronaut:micronaut-validation'
+}
