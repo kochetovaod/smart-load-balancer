@@ -1,0 +1,15 @@
+{
+    "Servers": {
+        "1": {
+            "Name": "SmartLB PostgreSQL",
+            "Group": "Servers",
+            "Host": "postgres-timescaledb",
+            "Port": 5432,
+            "MaintenanceDB": "smart_load_balancer",
+            "Username": "smartlb_user",
+            "SSLMode": "prefer",
+            "PassFile": "/pgpass",
+            "Comments": "Smart Load Balancer main database with TimescaleDB"
+        }
+    }
+}

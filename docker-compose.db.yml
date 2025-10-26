@@ -1,0 +1,173 @@
+version: '3.8'
+
+# Сеть для изоляции сервисов БД
+networks:
+  smartlb-network:
+    driver: bridge
+    name: smartlb-network
+
+# Volumes для персистентности данных
+volumes:
+  postgres-data:
+    driver: local
+  postgres-backup:
+    driver: local
+
+services:
+  # Основная база данных - PostgreSQL с TimescaleDB
+  postgres-timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: smartlb-postgres
+    restart: unless-stopped
+    
+    # Порт маппинг
+    ports:
+      - "5432:5432"  # PostgreSQL основной порт
+      - "5433:5432"  # Дублирующий порт для тестирования
+    
+    # Переменные окружения
+    environment:
+      POSTGRES_DB: smart_load_balancer
+      POSTGRES_USER: smartlb_user
+      POSTGRES_PASSWORD: smartlb_password_123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      
+      # TimescaleDB специфичные настройки
+      TIMESCALEDB_TELEMETRY: "off"
+      
+      # Настройки производительности
+      POSTGRES_SHARED_BUFFERS: 256MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 1GB
+      POSTGRES_WORK_MEM: 4MB
+      POSTGRES_MAINTENANCE_WORK_MEM: 64MB
+    
+    # Volumes для данных и инициализации
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./deployment/db/init-scripts:/docker-entrypoint-initdb.d:ro
+      - ./deployment/db/backups:/backups:rw
+    
+    # Health check для проверки готовности БД
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartlb_user -d smart_load_balancer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    
+    # Настройки ресурсов
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    
+    # Сеть
+    networks:
+      - smartlb-network
+    
+    # Логирование
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # PgAdmin для администрирования БД
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: smartlb-pgadmin
+    restart: unless-stopped
+    
+    # Порт маппинг
+    ports:
+      - "8082:80"
+    
+    # Переменные окружения
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@smartlb.local
+      PGADMIN_DEFAULT_PASSWORD: admin_password_123
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    
+    # Volumes для сохранения конфигурации
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      - ./deployment/db/pgadmin-servers.json:/pgadmin4/servers.json:ro
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Зависит от готовности БД
+    depends_on:
+      postgres-timescaledb:
+        condition: service_healthy
+    
+    # Настройки ресурсов
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    
+    # Сеть
+    networks:
+      - smartlb-network
+    
+    # Логирование
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Дополнительный сервис для мониторинга БД (опционально)
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: smartlb-postgres-exporter
+    restart: unless-stopped
+    
+    # Порт маппинг
+    ports:
+      - "9187:9187"
+    
+    # Переменные окружения
+    environment:
+      DATA_SOURCE_NAME: "postgresql://smartlb_user:smartlb_password_123@postgres-timescaledb:5432/smart_load_balancer?sslmode=disable"
+      PG_EXPORTER_EXTEND_QUERY_PATH: "/etc/postgres_exporter/queries.yaml"
+    
+    # Volumes для кастомных queries
+    volumes:
+      - ./deployment/db/postgres-exporter-queries.yaml:/etc/postgres_exporter/queries.yaml:ro
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9187/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Зависит от готовности БД
+    depends_on:
+      postgres-timescaledb:
+        condition: service_healthy
+    
+    # Настройки ресурсов
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+    
+    # Сеть
+    networks:
+      - smartlb-network
