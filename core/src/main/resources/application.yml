@@ -1,0 +1,9 @@
+smart-lb:
+  core:
+    name: "Smart Load Balancer Core"
+    version: "1.0.0-SNAPSHOT"
+    
+logging:
+  level:
+    com.company.loadbalancer: DEBUG
+    root: INFO
