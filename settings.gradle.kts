@@ -1,7 +1,3 @@
-rootProject.name = 'smart-load-balancer'
+rootProject.name = "smart-load-balancer"
 
-include 'core'
-include 'networking'
-include 'metrics'
-include 'agent'
-include 'monitoring'
+include(":core", ":networking", ":metrics", ":agent", ":monitoring")
