@@ -3,18 +3,17 @@ plugins {
 }
 
 dependencies {
-    // Metrics and monitoring
-    implementation("io.micrometer:micrometer-core:1.11.5")
-    implementation("io.micrometer:micrometer-registry-prometheus:1.11.5")
+    // Database
+    implementation("org.postgresql:postgresql:42.6.0")
+    implementation("com.zaxxer:HikariCP:5.1.0")
     
-    // Messaging
-    implementation("org.apache.kafka:kafka-clients:3.6.0")
-    implementation("org.apache.kafka:kafka-streams:3.6.0")
+    // Spring Data (базовые зависимости)
+    implementation("org.springframework.data:spring-data-commons:3.2.0")
+    implementation("org.springframework:spring-jdbc:6.1.0")
+    implementation("org.springframework:spring-tx:6.1.0")
     
-    // RPC
-    implementation("io.grpc:grpc-protobuf:1.59.0")
-    implementation("io.grpc:grpc-stub:1.59.0")
-    implementation("io.grpc:grpc-netty:1.59.0")
+    // Connection pooling
+    implementation("com.zaxxer:HikariCP:5.1.0")
     
     // Utilities
     implementation("org.slf4j:slf4j-api:2.0.9")
@@ -24,6 +23,7 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.5.0")
     testImplementation("org.assertj:assertj-core:3.24.2")
+    testImplementation("org.testcontainers:postgresql:1.19.3")
 }
 
 tasks.test {
