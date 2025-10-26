@@ -62,7 +62,8 @@ protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "p
 # Metrics
 micrometer-core = { module = "io.micrometer:micrometer-core", version.ref = "micrometer" }
 micrometer-registry-prometheus = { module = "io.micrometer:micrometer-registry-prometheus", version.ref = "micrometer" }
-prometheus-metrics = { module = "io.prometheus:prometheus-metrics-core", version.ref = "prometheus" }
+prometheus-simpleclient = { module = "io.prometheus:simpleclient", version.ref = "prometheus" }
+prometheus-simpleclient-common = { module = "io.prometheus:simpleclient_common", version.ref = "prometheus" }
 
 # Kafka
 kafka-clients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }

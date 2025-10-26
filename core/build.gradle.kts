@@ -32,36 +32,8 @@ tasks.test {
         showStandardStreams = true
     }
     
-    // Set longer timeout for integration tests
-    timeout.set(java.time.Duration.ofMinutes(10))
-    
-    // Configure system properties for integration tests
+    // Configure system properties for tests
     systemProperty("project.root", project.rootDir.absolutePath)
-}
-
-// Configure separate task for integration tests
-tasks.register<Test>("integrationTest") {
-    description = "Runs integration tests"
-    group = "verification"
-    
-    useJUnitPlatform()
-    testLogging {
-        events("passed", "skipped", "failed")
-        showStandardStreams = true
-    }
-    
-    timeout.set(java.time.Duration.ofMinutes(15))
-    
-    include("**/*BuildTest*")
-    include("**/*IntegrationTest*")
-    
-    systemProperty("project.root", project.rootDir.absolutePath)
-    systemProperty("integration.test", "true")
-}
-
-// Make check task depend on integration tests
-tasks.check {
-    dependsOn("integrationTest")
 }
 
 java {

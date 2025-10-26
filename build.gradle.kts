@@ -30,6 +30,10 @@ subprojects {
     
     tasks.test {
         useJUnitPlatform()
+        testLogging {
+            events("passed", "skipped", "failed")
+            showStandardStreams = true
+        }
         finalizedBy(tasks.jacocoTestReport)
     }
     
@@ -64,24 +68,4 @@ tasks.register("qualityCheck") {
     dependsOn("build", "test", "jacocoRootReport", "dependencyUpdates")
     group = "verification"
     description = "Runs all quality checks including tests, coverage and dependency updates"
-}
-
-// Configure integration tests for all subprojects
-subprojects {
-    tasks.register<Test>("integrationTest") {
-        description = "Runs integration tests"
-        group = "verification"
-        
-        useJUnitPlatform()
-        
-        include("**/*BuildTest*")
-        include("**/*IntegrationTest*")
-        
-        systemProperty("integration.test", "true")
-        timeout.set(java.time.Duration.ofMinutes(10))
-    }
-    
-    tasks.check {
-        dependsOn("integrationTest")
-    }
 }
