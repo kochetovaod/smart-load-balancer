@@ -1,0 +1,21 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Smart Load Balancer - Overview",
+    "tags": ["loadbalancer", "overview"],
+    "timezone": "browser",
+    "panels": [],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "templating": {
+      "list": []
+    },
+    "refresh": "30s",
+    "schemaVersion": 36,
+    "version": 0,
+    "description": "Overview dashboard for Smart Load Balancer metrics"
+  }
+}

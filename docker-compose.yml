@@ -1,30 +1,360 @@
 version: '3.8'
 
+# Общая сеть для всех сервисов
+networks:
+  smartlb-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Volumes для персистентности данных
+volumes:
+  # Database volumes
+  postgres-data:
+    driver: local
+  postgres-backup:
+    driver: local
+  pgadmin-data:
+    driver: local
+  
+  # Kafka volumes
+  zookeeper-data:
+    driver: local
+  kafka-data:
+    driver: local
+  kafka-logs:
+    driver: local
+  
+  # Monitoring volumes
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  grafana-provisioning:
+    driver: local
+  jaeger-data:
+    driver: local
+
+# Сервисы инфраструктуры
 services:
+  # ==================== DATABASE SERVICES ====================
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.4.0
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
+    extends:
+      file: docker-compose.kafka.yml
+      service: zookeeper
+    networks:
+      - smartlb-network
 
   kafka:
-    image: confluentinc/cp-kafka:7.4.0
+    extends:
+      file: docker-compose.kafka.yml
+      service: kafka
     depends_on:
-      - zookeeper
-    environment:
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      zookeeper:
+        condition: service_healthy
+    networks:
+      - smartlb-network
 
+  kafka-ui:
+    extends:
+      file: docker-compose.kafka.yml
+      service: kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - smartlb-network
+
+  kafka-connect:
+    extends:
+      file: docker-compose.kafka.yml
+      service: kafka-connect
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - smartlb-network
+
+  postgres-timescaledb:
+    extends:
+      file: docker-compose.db.yml
+      service: postgres-timescaledb
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - smartlb-network
+
+  pgadmin:
+    extends:
+      file: docker-compose.db.yml
+      service: pgadmin
+    depends_on:
+      postgres-timescaledb:
+        condition: service_healthy
+    networks:
+      - smartlb-network
+
+  postgres-exporter:
+    extends:
+      file: docker-compose.db.yml
+      service: postgres-exporter
+    depends_on:
+      postgres-timescaledb:
+        condition: service_healthy
+    networks:
+      - smartlb-network
+
+  # ==================== MONITORING SERVICES ====================
   prometheus:
     image: prom/prometheus:latest
+    container_name: smartlb-prometheus
+    restart: unless-stopped
     ports:
       - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
     volumes:
-      - ./deployment/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+      - ./deployment/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deployment/monitoring/prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres-timescaledb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    networks:
+      - smartlb-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   grafana:
     image: grafana/grafana:latest
+    container_name: smartlb-grafana
+    restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=grafana_admin_2024
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - grafana-provisioning:/etc/grafana/provisioning
+      - ./deployment/monitoring/grafana-dashboards:/etc/grafana/dashboards:ro
+      - ./deployment/monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./deployment/monitoring/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    networks:
+      - smartlb-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==================== TRACING SERVICES (OPTIONAL) ====================
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: smartlb-jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686"  # UI
+      - "14268:14268"  # Collector
+      - "9411:9411"    # Zipkin
+    environment:
+      - COLLECTOR_ZIPKIN_HTTP_PORT=9411
+      - MEMORY_MAX_TRACES=50000
+      - LOG_LEVEL=info
+    volumes:
+      - jaeger-data:/tmp/jaeger
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:14269/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    networks:
+      - smartlb-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==================== LOAD BALANCER SERVICES ====================
+  load-balancer-core:
+    image: openjdk:17-jre-slim
+    container_name: smartlb-core
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "8081:8081"  # Admin port
+    environment:
+      - JAVA_OPTS=-Xmx512m -Xms256m
+      - SPRING_PROFILES_ACTIVE=docker
+      - DB_URL=jdbc:postgresql://postgres-timescaledb:5432/loadbalancer_operational
+      - DB_USERNAME=lb_operator
+      - DB_PASSWORD=lb_operator_password_2024
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - METRICS_DB_URL=jdbc:postgresql://postgres-timescaledb:5432/loadbalancer_metrics
+      - METRICS_DB_USERNAME=lb_metrics
+      - METRICS_DB_PASSWORD=lb_metrics_password_2024
+    volumes:
+      - ./core/build/libs/core-1.0.0-SNAPSHOT.jar:/app/core.jar:ro
+    command: >
+      sh -c "java $JAVA_OPTS -jar /app/core.jar"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      postgres-timescaledb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 512M
+    networks:
+      - smartlb-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==================== METRICS AGENT SERVICES ====================
+  metrics-agent:
+    image: openjdk:17-jre-slim
+    container_name: smartlb-metrics-agent
+    restart: unless-stopped
+    ports:
+      - "9091:9091"
+    environment:
+      - JAVA_OPTS=-Xmx256m -Xms128m
+      - SPRING_PROFILES_ACTIVE=docker
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - METRICS_TOPIC=service-metrics
+      - HEALTH_TOPIC=health-status
+    volumes:
+      - ./agent/build/libs/agent-1.0.0-SNAPSHOT.jar:/app/agent.jar:ro
+    command: >
+      sh -c "java $JAVA_OPTS -jar /app/agent.jar"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      kafka:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    networks:
+      - smartlb-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==================== MOCK SERVICES FOR TESTING ====================
+  mock-user-service:
+    image: containous/whoami:latest
+    container_name: smartlb-mock-user
+    restart: unless-stopped
+    ports:
+      - "8085:80"
+    labels:
+      - "smartlb.service.id=user-service"
+      - "smartlb.instance.id=mock-user-1"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
+    networks:
+      - smartlb-network
+
+  mock-order-service:
+    image: containous/whoami:latest
+    container_name: smartlb-mock-order
+    restart: unless-stopped
+    ports:
+      - "8086:80"
+    labels:
+      - "smartlb.service.id=order-service"
+      - "smartlb.instance.id=mock-order-1"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
+    networks:
+      - smartlb-network

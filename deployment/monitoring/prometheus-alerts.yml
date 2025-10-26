@@ -1,0 +1,139 @@
+groups:
+  - name: smartlb-alerts
+    rules:
+      # Database alerts
+      - alert: PostgresqlDown
+        expr: up{job="postgres-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: database
+        annotations:
+          summary: "PostgreSQL exporter is down"
+          description: "PostgreSQL exporter for {{ $labels.instance }} has been down for more than 1 minute."
+
+      - alert: PostgresqlHighConnections
+        expr: pg_stat_database_numbackends{datname="loadbalancer_operational"} > 50
+        for: 2m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "High number of PostgreSQL connections"
+          description: "Database {{ $labels.datname }} has {{ $value }} connections"
+
+      # Kafka alerts
+      - alert: KafkaBrokerDown
+        expr: up{job="kafka-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: kafka
+        annotations:
+          summary: "Kafka broker is down"
+          description: "Kafka broker {{ $labels.instance }} has been down for more than 1 minute."
+
+      - alert: KafkaUnderReplicatedPartitions
+        expr: kafka_server_replicamanager_underreplicatedpartitions > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: kafka
+        annotations:
+          summary: "Kafka under-replicated partitions"
+          description: "Kafka has {{ $value }} under-replicated partitions"
+
+      # Load Balancer alerts
+      - alert: LoadBalancerDown
+        expr: up{job="load-balancer-core"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: loadbalancer
+        annotations:
+          summary: "Load balancer core is down"
+          description: "Load balancer core service has been down for more than 1 minute."
+
+      - alert: HighErrorRate
+        expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) / rate(http_server_requests_seconds_count[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: loadbalancer
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }}"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m])) > 1
+        for: 3m
+        labels:
+          severity: warning
+          service: loadbalancer
+        annotations:
+          summary: "High latency detected"
+          description: "95th percentile latency is {{ $value }}s"
+
+      # Service health alerts
+      - alert: ServiceUnhealthy
+        expr: smartlb_service_health_status{status="unhealthy"} == 1
+        for: 2m
+        labels:
+          severity: critical
+          service: loadbalancer
+        annotations:
+          summary: "Service {{ $labels.service_id }} is unhealthy"
+          description: "Service {{ $labels.service_id }} instance {{ $labels.instance_id }} has been unhealthy for 2 minutes"
+
+      - alert: ServiceDegraded
+        expr: smartlb_service_health_status{status="degraded"} == 1
+        for: 3m
+        labels:
+          severity: warning
+          service: loadbalancer
+        annotations:
+          summary: "Service {{ $labels.service_id }} is degraded"
+          description: "Service {{ $labels.service_id }} instance {{ $labels.instance_id }} has been degraded for 3 minutes"
+
+      # Resource alerts
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes{container=~"load-balancer-core|metrics-agent"} / container_spec_memory_limit_bytes > 0.8
+        for: 3m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "High memory usage detected"
+          description: "Container {{ $labels.container }} is using {{ $value | humanizePercentage }} of its memory limit"
+
+      - alert: HighCPUUsage
+        expr: rate(container_cpu_usage_seconds_total{container=~"load-balancer-core|metrics-agent"}[5m]) > 0.8
+        for: 3m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "High CPU usage detected"
+          description: "Container {{ $labels.container }} is using {{ $value | humanizePercentage }} CPU"
+
+  - name: smartlb-capacity-alerts
+    rules:
+      - alert: InstanceCapacityWarning
+        expr: smartlb_instance_active_connections / smartlb_instance_max_connections > 0.8
+        for: 2m
+        labels:
+          severity: warning
+          service: loadbalancer
+        annotations:
+          summary: "Instance {{ $labels.instance_id }} approaching capacity"
+          description: "Instance {{ $labels.instance_id }} is at {{ $value | humanizePercentage }} capacity"
+
+      - alert: InstanceCapacityCritical
+        expr: smartlb_instance_active_connections / smartlb_instance_max_connections > 0.95
+        for: 1m
+        labels:
+          severity: critical
+          service: loadbalancer
+        annotations:
+          summary: "Instance {{ $labels.instance_id }} at critical capacity"
+          description: "Instance {{ $labels.instance_id }} is at {{ $value | humanizePercentage }} capacity"
